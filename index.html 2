@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>とさでん・なう！｜高知路面電車マップ</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { 
+            --tosaden: #228b22; --low: #00e676; --mid: #ffea00; --high: #ff1744; 
+            --glass: rgba(255, 255, 255, 0.95);
+        }
+        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Hiragino Sans', 'Meiryo', sans-serif; overflow: hidden; background: #f0f0f0; }
+        #map { height: 100vh; width: 100vw; z-index: 1; }
+
+        /* UI要素 */
+        .header-clock { position: fixed; top: 15px; left: 15px; z-index: 2000; background: var(--glass); backdrop-filter: blur(10px); padding: 10px 20px; border-radius: 40px; border: 1px solid rgba(0,0,0,0.1); font-weight: 800; font-size: 0.9rem; display: flex; align-items: center; gap: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+        .menu-tab { position: fixed; left: 0; top: 50%; transform: translateY(-50%); background: var(--tosaden); color: white; padding: 15px 10px; border-radius: 0 15px 15px 0; z-index: 4000; writing-mode: vertical-rl; font-weight: bold; font-size: 0.85rem; letter-spacing: 2px; box-shadow: 4px 0 15px rgba(0,0,0,0.2); cursor: pointer; border: 1px solid rgba(255,255,255,0.3); border-left: none; }
+
+        /* 車両マーカーのデザイン */
+        .tram-node { display: flex; flex-direction: column; align-items: center; }
+        .tram-body {
+            display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+            background: #222; border-radius: 30px; border: 3px solid; color: white;
+            white-space: nowrap; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            transition: transform 0.2s;
+        }
+        .border-low { border-color: var(--low); }
+        .border-mid { border-color: var(--mid); }
+        .border-high { border-color: var(--high); animation: pulse-high 1.5s infinite; }
+        @keyframes pulse-high { 0% { box-shadow: 0 0 0 0 rgba(255,23,68,0.5); } 100% { box-shadow: 0 0 0 10px rgba(255,23,68,0); } }
+
+        /* その他UI */
+        .station-list-drawer { position: fixed; left: -300px; top: 0; width: 280px; height: 100%; background: white; z-index: 5000; box-shadow: 5px 0 30px rgba(0,0,0,0.3); transition: 0.4s cubic-bezier(0.25, 1, 0.5, 1); display: flex; flex-direction: column; }
+        .station-list-drawer.active { left: 0; }
+        .st-label { background: white !important; border: 2px solid var(--tosaden) !important; color: #1a1a1a !important; font-weight: 900 !important; font-size: 11px !important; padding: 2px 8px !important; border-radius: 20px !important; }
+        .bottom-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 32px 32px 0 0; z-index: 3000; transform: translateY(101%); transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1); max-height: 80vh; overflow-y: auto; }
+        .bottom-sheet.active { transform: translateY(0); }
+        .sheet-photo { width: 100%; height: 200px; object-fit: cover; }
+        .sheet-body { padding: 20px; }
+        .time-card { display: flex; align-items: center; justify-content: space-between; background: #f8f8f8; padding: 15px; border-radius: 15px; margin-bottom: 10px; }
+        .locate-btn { position: fixed; right: 20px; bottom: 40px; width: 60px; height: 60px; background: white; border-radius: 50%; z-index: 2000; border: none; font-size: 28px; box-shadow: 0 6px 20px rgba(0,0,0,0.15); cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="header-clock">🕒 <span id="clock-val">00:00:00</span></div>
+    <div class="menu-tab" id="menu-tab-btn">🚉 電停リスト</div>
+    <button class="locate-btn" onclick="locateUser()">📍</button>
+
+    <div id="drawer" class="station-list-drawer">
+        <div style="background:var(--tosaden); color:white; padding:25px 20px; font-weight:bold;">🚉 電停一覧</div>
+        <div id="drawer-items" style="flex:1; overflow-y:auto;"></div>
+        <button id="close-drawer-btn" style="padding:15px; border:none; background:#eee; cursor:pointer;">閉じる</button>
+    </div>
+
+    <div id="map"></div>
+
+    <div id="sheet" class="bottom-sheet">
+        <div style="width:40px; height:5px; background:#ccc; border-radius:10px; margin:15px auto;" onclick="closeSheet()"></div>
+        <img id="sheet-img" class="sheet-photo" src="">
+        <div class="sheet-body" id="sheet-content"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // --- データ定義 ---
+        const stations = [
+            { name: "高知駅前", pos: [33.5670, 133.5430], img: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Kochi-Station-2012.jpg/640px-Kochi-Station-2012.jpg", desc: "JRとの接続点ぜよ。", times: ["14:00","14:15","14:30","14:45"] },
+            { name: "蓮池町通", pos: [33.5620, 133.5430], img: "https://upload.wikimedia.org/wikipedia/commons/4/4b/Hasuikecho-dori_Station_2016.jpg", desc: "日曜市に近いぜよ。", times: ["14:02","14:17","14:32"] },
+            { name: "はりまや橋", pos: [33.5594, 133.5430], img: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6d/Harimayabashi_Station_2016.jpg/640px-Harimayabashi_Station_2016.jpg", desc: "交差点が名物ぜよ！", times: ["14:05","14:20","14:35"] },
+            { name: "高知城前", pos: [33.5594, 133.5300], img: "https://upload.wikimedia.org/wikipedia/commons/8/87/Kochi_Castle_01.jpg", desc: "お城が見えるぜよ。", times: ["14:11","14:26","14:41"] },
+            { name: "鏡川橋", pos: [33.5594, 133.5150], img: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Kagamigawabashi_Station_2016.jpg/640px-Kagamigawabashi_Station_2016.jpg", desc: "鏡川を渡るぜよ。", times: ["14:20","14:35","14:50"] },
+            { name: "知寄町", pos: [33.5594, 133.5650], img: "https://upload.wikimedia.org/wikipedia/commons/3/3d/Chiyoricho_Station_2016.jpg", desc: "東の拠点ぜよ。", times: ["14:10","14:25","14:40"] },
+            { name: "後免町", pos: [33.5594, 133.6450], img: "https://upload.wikimedia.org/wikipedia/commons/5/5e/Gomenmachi_Station_2016.jpg", desc: "後免線の終点ぜよ。", times: ["14:50","15:10"] },
+            { name: "桟橋通五丁目", pos: [33.5400, 133.5430], img: "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Sambashidori-Gochome_Station_2016.jpg/640px-Sambashidori-Gochome_Station_2016.jpg", desc: "桟橋線の終点ぜよ。", times: ["14:15","14:35"] }
+        ];
+
+        // 路線データ
+        const paths = {
+            eastWest: { start: [33.5594, 133.5100], end: [33.5594, 133.6450] },
+            northSouth: { start: [33.5670, 133.5430], end: [33.5400, 133.5430] }
+        };
+
+        // 電車の設定（8両）
+        const tramConfigs = [
+            { id: 1, dest: "伊野行", path: paths.eastWest, offset: 0, speed: 60, cong: "low" },
+            { id: 2, dest: "後免町行", path: paths.eastWest, offset: 15, speed: 55, cong: "mid" },
+            { id: 3, dest: "伊野行", path: paths.eastWest, offset: 30, speed: 65, cong: "high" },
+            { id: 4, dest: "後免町行", path: paths.eastWest, offset: 45, speed: 50, cong: "low" },
+            { id: 5, dest: "高知駅前行", path: paths.northSouth, offset: 5, speed: 40, cong: "mid" },
+            { id: 6, dest: "桟橋五丁目行", path: paths.northSouth, offset: 20, speed: 45, cong: "low" },
+            { id: 7, dest: "高知駅前行", path: paths.northSouth, offset: 35, speed: 42, cong: "high" },
+            { id: 8, dest: "桟橋五丁目行", path: paths.northSouth, offset: 50, speed: 48, cong: "low" }
+        ];
+
+        // --- 初期化 ---
+        const map = L.map('map', { zoomControl: false }).setView([33.5594, 133.5430], 14);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(map);
+
+        const tramMarkers = {};
+        tramConfigs.forEach(t => {
+            const icon = L.divIcon({
+                className: '',
+                html: `<div class="tram-node"><div class="tram-body border-${t.cong}">🚃<span style="font-size:10px;">${t.dest}</span></div></div>`,
+                iconSize: [100, 40]
+            });
+            tramMarkers[t.id] = L.marker(t.path.start, { icon: icon }).addTo(map);
+        });
+
+        const drawerItems = document.getElementById('drawer-items');
+        stations.forEach(st => {
+            const m = L.marker(st.pos, {
+                icon: L.divIcon({ className: '', html: '<div style="width:12px;height:12px;background:white;border:3px solid var(--tosaden);border-radius:50%;"></div>', iconSize: [12,12] })
+            }).addTo(map);
+            m.bindTooltip(`🕒 ${st.name}`, { permanent: true, direction: 'bottom', className: 'st-label' });
+            m.on('click', () => showStation(st));
+
+            const item = document.createElement('div');
+            item.style.cssText = `padding:15px 20px; border-bottom:1px solid #eee; cursor:pointer;`;
+            item.innerHTML = `🕒 <strong>${st.name}</strong>`;
+            item.onclick = () => { toggleDrawer(); showStation(st); };
+            drawerItems.appendChild(item);
+        });
+
+        // --- ループ処理 ---
+        function animate() {
+            const now = Date.now() / 1000;
+            document.getElementById('clock-val').textContent = new Date().toLocaleTimeString('ja-JP');
+
+            tramConfigs.forEach(t => {
+                // 時間に基づいた往復計算
+                let p = ((now + t.offset) % t.speed) / t.speed;
+                p = p < 0.5 ? p * 2 : (1 - p) * 2; // 0→1→0の動き
+
+                const lat = t.path.start[0] + (t.path.end[0] - t.path.start[0]) * p;
+                const lng = t.path.start[1] + (t.path.end[1] - t.path.start[1]) * p;
+                tramMarkers[t.id].setLatLng([lat, lng]);
+            });
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        // --- UI操作 ---
+        function showStation(st) {
+            const cur = new Date().getHours() * 60 + new Date().getMinutes();
+            document.getElementById('sheet-img').src = st.img;
+            let html = `<h2>${st.name}</h2><p>${st.desc}</p><hr style="border:0;border-top:1px solid #eee;margin:15px 0;">`;
+            
+            const upcoming = st.times.filter(t => {
+                const [h,m] = t.split(':').map(Number);
+                const d = (h*60+m) - cur;
+                return d >= -2 && d < 120;
+            });
+
+            if(upcoming.length === 0) html += `<p>本日の運行は終了しました。</p>`;
+            else upcoming.forEach(t => {
+                const [h,m] = t.split(':').map(Number);
+                const d = (h*60+m) - cur;
+                html += `<div class="time-card"><div><strong>${t}</strong><br><small>各方面</small></div><div class="time-relative" style="background:${d<=3?'var(--high)':'var(--tosaden)'}">${d<=0?'まもなく':'あと'+d+'分'}</div></div>`;
+            });
+
+            document.getElementById('sheet-content').innerHTML = html;
+            document.getElementById('sheet').classList.add('active');
+            map.flyTo(st.pos, 16);
+        }
+
+        function toggleDrawer() { document.getElementById('drawer').classList.toggle('active'); }
+        function closeSheet() { document.getElementById('sheet').classList.remove('active'); }
+        function locateUser() { map.locate({setView: true, maxZoom: 16}); }
+
+        document.getElementById('menu-tab-btn').onclick = toggleDrawer;
+        document.getElementById('close-drawer-btn').onclick = toggleDrawer;
+        map.on('click', () => { document.getElementById('drawer').classList.remove('active'); closeSheet(); });
+    </script>
+</body>
+</html>
