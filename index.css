@@ -1,0 +1,39 @@
+/* メニューのタブ（地図より上に） */
+.menu-tab {
+    position: fixed;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--tosaden);
+    color: white;
+    padding: 15px 10px;
+    border-radius: 0 15px 15px 0;
+    z-index: 4000; /* 十分に高い値に */
+    writing-mode: vertical-rl;
+    font-weight: bold;
+    font-size: 0.85rem;
+    letter-spacing: 2px;
+    box-shadow: 4px 0 15px rgba(0,0,0,0.2);
+    cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.3);
+    border-left: none;
+}
+
+/* サイドメニュー（さらに上に） */
+.station-list-drawer {
+    position: fixed;
+    left: -300px;
+    top: 0;
+    width: 280px;
+    height: 100%;
+    background: white;
+    z-index: 5000; /* 最前面 */
+    box-shadow: 5px 0 30px rgba(0,0,0,0.3);
+    transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+    display: flex;
+    flex-direction: column;
+}
+
+.station-list-drawer.active {
+    left: 0;
+}
