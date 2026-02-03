@@ -65,7 +65,31 @@ const drawerContent = document.getElementById('drawer-items');
 stations.forEach(st => {
     const item = document.createElement('div');
     item.className = 'drawer-item';
-    item.innerHTML = `<span>🕒</span> <div><strong>${st.name}</strong></div>`;
+    item.innerHTML =// initDrawer関数の中を修正
+function initDrawer() {
+    drawerItems.innerHTML = ''; 
+    stations.forEach(st => {
+        const item = document.createElement('div');
+        item.style.cssText = `
+            padding: 18px 20px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 500;
+        `;
+        // ここで電停名の前に時計マークを追加
+        item.innerHTML = `<span style="font-size:1.2rem;">🕒</span> <span>${st.name}</span>`;
+        
+        item.addEventListener('click', () => {
+            toggleDrawer();
+            showStation(st); 
+        });
+        
+        drawerItems.appendChild(item);
+    });
+}
     item.onclick = () => {
         toggleDrawer(); // メニューを閉じる
         showStation(st); // 地図を移動して時刻表を表示
